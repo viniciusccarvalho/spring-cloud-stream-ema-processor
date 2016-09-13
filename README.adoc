@@ -1,0 +1,68 @@
+//tag::ref-doc[]
+= Exponential Moving Average Processor
+
+Aggregates input data into window of time, computes the EWMA of it and emmits the new aggregated value
+
+== Options
+//tag::configuration-properties[]
+$$ewma.window: Duration of the batching window in seconds
+$$ewma.groupKey: What field to use as groupBy on the aggregation phase
+$$ewma.fieldName: Field name to be used to compute the value
+//end::configuration-properties[]
+
+Input needs to be a JSON type for the moment. So given any input, this processor can compute the ewma of a field. For example, using the following payload as input:
+
+[source,javascript]
+----
+[
+  {
+  "symbol": "AAPL",
+    "Ask": "108.49",
+
+    "Bid": "108.16"
+  },
+  {
+    "symbol": "VMW",
+      "Ask": "68.49",
+
+      "Bid": "68.16"
+    }
+    ]
+----
+
+`stream create ewma-processor --ewma.window=60 ewma.groupKey=symbol ewma.field=Ask`
+
+Would compute the 1 minute EMA using the field Ask and grouping by symbol
+
+The processor relies on http:///projectreactor.io[project reactor] and Spring Cloud Stream reactive support to group elements as shown on the processor code below:
+
+
+[source,java]
+----
+    @StreamListener
+	@Output(Processor.OUTPUT)
+	public Flux<GroupedMovingAverage> computeEWMA(
+			@Input(Processor.INPUT) Flux<String> emitter) {
+		return emitter.map(s -> {
+			JsonNode payload = null;
+			try {
+				payload = mapper.readTree(s);
+			}
+			catch (IOException e) {
+				e.printStackTrace();
+			}
+			return payload;
+		}).window(Duration.ofSeconds(properties.getWindow()))
+				.flatMap(w -> w.groupBy(
+						jsonNode -> jsonNode.get(properties.getGroupKey()).asText())
+						.flatMap(group -> group
+								.reduce(new ExponentialMovingAverage(), (ewma, node) -> {
+									ewma.compute(node.get(properties.getFieldName())
+											.asDouble());
+									return ewma;
+								}).map(ewma1 -> {
+									return new GroupedMovingAverage(group.key(),
+											ewma1.getCurrentValue());
+								})));
+	}
+----
