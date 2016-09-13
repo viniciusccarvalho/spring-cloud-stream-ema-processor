@@ -63,6 +63,7 @@ public class ExponentialMovingAverage {
 			currentValue = value;
 		}
 		double newValue = oldValue + alpha * (value - oldValue);
+		oldValue = currentValue;
 		currentValue = newValue;
 	}
 
